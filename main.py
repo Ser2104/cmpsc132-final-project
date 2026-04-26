@@ -12,6 +12,23 @@ def print_board(board):
             print("---+---+---")
     print()
 
+def get_move(board, player):
+    # Ask for a valid move until input is correct
+    while True:
+        try:
+            row = int(input(f"Player {player}, enter row (0-2): "))
+            col = int(input(f"Player {player}, enter column (0-2): "))
+
+            if row < 0 or row > 2 or col < 0 or col > 2:
+                print("Invalid move. Try again.")
+            elif board[row][col] != " ":
+                print("Spot already taken.")
+            else:
+                return row, col
+
+        except ValueError:
+            print("Invalid input. Enter numbers only.")
+
 
 def main():
     print("Welcome to Tic-Tac-Toe!")
