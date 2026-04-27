@@ -1,3 +1,6 @@
+import random
+
+
 def create_board():
     # Creates a 3x3 board using a list of lists
     return [[" " for _ in range(3)] for _ in range(3)]
@@ -25,12 +28,12 @@ def print_reference_board():
     print()
 
 
-def get_move(board, player):
+def get_move(board, player, names):
     # Ask for a valid move until input is correct
     while True:
         try:
-            row = int(input(f"Player {player}, enter row (0-2): "))
-            col = int(input(f"Player {player}, enter column (0-2): "))
+            row = int(input(f"{names[player]}, enter row (0-2): "))
+            col = int(input(f"{names[player]}, enter column (0-2): "))
 
             if row < 0 or row > 2 or col < 0 or col > 2:
                 print("Invalid move. Try again.")
@@ -80,31 +83,54 @@ def is_draw(board):
     return True
 
 
-def play_game(scores):
+def get_player_names():
+    name_x = input("Enter name for player X: ").strip() or "Player X"
+    name_o = input("Enter name for player O: ").strip() or "Player O"
+    return {"X": name_x, "O": name_o}
+
+
+def choose_starter(names):
+    while True:
+        choice = input(f"Who goes first? X ({names['X']}) / O ({names['O']}) / random: ").strip().lower()
+        if choice == "x":
+            return "X"
+        if choice == "o":
+            return "O"
+        if choice == "random":
+            starter = random.choice(["X", "O"])
+            print(f"{names[starter]} ({starter}) goes first!")
+            return starter
+        print("Enter 'X', 'O', or 'random'.")
+
+
+def play_game(scores, names, starter):
     # Runs a single game and updates the scores dictionary when a player wins
     board = create_board()
-    current_player = "X"
+    current_player = starter
+    moves = 0
 
     while True:
         print_board(board)
 
-        row, col = get_move(board, current_player)
+        row, col = get_move(board, current_player, names)
         board[row][col] = current_player
+        moves += 1
 
         if check_winner(board, current_player):
             print_board(board)
-            print(f"Player {current_player} wins!")
+            print(f"{names[current_player]} ({current_player}) wins in {moves} moves!")
             scores[current_player] += 1
             break
 
         if is_draw(board):
             print_board(board)
             print("The game is a draw!")
+            scores["draws"] += 1
             break
 
         current_player = switch_player(current_player)
 
-    print(f"Score — X: {scores['X']}  |  O: {scores['O']}")
+    print(f"Score — {names['X']}: {scores['X']}  |  {names['O']}: {scores['O']}  |  Draws: {scores['draws']}")
 
 
 def main():
@@ -114,17 +140,25 @@ def main():
     print()
     print_reference_board()
 
+    names = get_player_names()
+    starter = choose_starter(names)
+
     # Dictionary to track wins for each player across multiple rounds
-    scores = {"X": 0, "O": 0}
+    scores = {"X": 0, "O": 0, "draws": 0}
 
     while True:
-        play_game(scores)
+        play_game(scores, names, starter)
+        starter = switch_player(starter)
 
-        again = input("Play again? (y/n): ").strip().lower()
+        while True:
+            again = input("Play again? (y/n): ").strip().lower()
+            if again in ("y", "n"):
+                break
+            print("Please enter 'y' or 'n'.")
         if again != "y":
             break
 
-    print(f"\nFinal scores — X: {scores['X']}  |  O: {scores['O']}")
+    print(f"\nFinal scores — {names['X']}: {scores['X']}  |  {names['O']}: {scores['O']}  |  Draws: {scores['draws']}")
     print("Thanks for playing!")
 
 
