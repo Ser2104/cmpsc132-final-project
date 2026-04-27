@@ -7,16 +7,18 @@ GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RESET = "\033[0m"
 
+PRESET_SYMBOLS = ["😂", "❤️", "😭", "🔥", "🤣", "✨", "👍", "😍", "🥰", "😊"]
+
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def cell_str(c):
+def cell_str(c, symbols):
     if c == "X":
-        return RED + "X" + RESET
+        return RED + symbols["X"] + RESET
     if c == "O":
-        return CYAN + "O" + RESET
+        return CYAN + symbols["O"] + RESET
     return " "
 
 
@@ -25,16 +27,33 @@ def create_board(size=3):
     return [[" " for _ in range(size)] for _ in range(size)]
 
 
-def print_board(board):
-    # Displays the board in a clean format
+def _is_wide(sym):
+    # Emoji and non-ASCII symbols render as 2 columns in the terminal
+    return not (len(sym) == 1 and ord(sym[0]) < 128)
+
+
+def print_board(board, symbols):
     size = len(board)
-    sep = "  +" + ("---+" * size)
+    wide = _is_wide(symbols["X"]) or _is_wide(symbols["O"])
+    cell_w = 4 if wide else 3
+
+    sep = "  +" + ("-" * cell_w + "+") * size
     print()
-    print("    " + "   ".join(str(c) for c in range(size)))
+    print("    " + (" " * cell_w).join(str(c) for c in range(size)))
     print(sep)
     for row in range(size):
-        cells = " | ".join(cell_str(board[row][col]) for col in range(size))
-        print(f"{row} | " + cells + " |")
+        row_str = f"{row} |"
+        for col in range(size):
+            c = board[row][col]
+            if c != " ":
+                sym = symbols[c]
+                color = RED if c == "X" else CYAN
+                # narrow symbol in a wide-mode board needs an extra space
+                extra = " " if wide and not _is_wide(sym) else ""
+                row_str += " " + color + sym + RESET + extra + " |"
+            else:
+                row_str += " " * cell_w + "|"
+        print(row_str)
         print(sep)
     print()
 
@@ -50,16 +69,16 @@ def print_reference_board():
     print()
 
 
-def get_move(board, player, names):
+def get_move(board, player, names, symbols):
     # Ask for a valid move until input is correct
     while True:
         try:
             size = len(board)
-            row = int(input(f"{names[player]}, enter row (0-{size - 1}): "))
+            row = int(input(f"{names[player]} ({symbols[player]}), enter row (0-{size - 1}): "))
             if row < 0 or row >= size:
                 print(f"Row must be between 0 and {size - 1}.")
                 continue
-            col = int(input(f"{names[player]}, enter column (0-{size - 1}): "))
+            col = int(input(f"{names[player]} ({symbols[player]}), enter column (0-{size - 1}): "))
             if col < 0 or col >= size:
                 print(f"Column must be between 0 and {size - 1}.")
                 continue
@@ -104,6 +123,67 @@ def is_draw(board):
     return True
 
 
+def choose_symbol(player_key, player_name, taken_symbol=None):
+    print(f"\nChoose symbol for {player_name} ({player_key}):")
+    print(f"  1. Keep default ({player_key})")
+    print(f"  2. Choose from emoji list")
+    print(f"  3. Enter custom symbol")
+    print(f"  0. Back")
+    while True:
+        choice = input("  Option (0-3): ").strip()
+        if choice == "0" or choice.lower() == "back":
+            return None
+        if choice == "1":
+            if player_key == taken_symbol:
+                print("  That symbol is already taken. Choose another.")
+                continue
+            return player_key
+        if choice == "2":
+            print()
+            for i, sym in enumerate(PRESET_SYMBOLS, 1):
+                print(f"    {i:2}. {sym}")
+            print("     0. Back")
+            while True:
+                sub = input("    Choice (0-10): ").strip()
+                if sub == "0" or sub.lower() == "back":
+                    break
+                if sub.isdigit() and 1 <= int(sub) <= 10:
+                    sym = PRESET_SYMBOLS[int(sub) - 1]
+                    if sym == taken_symbol:
+                        print("    That symbol is already taken. Choose another.")
+                        continue
+                    return sym
+                print("    Enter a number between 0 and 10.")
+            continue
+        if choice == "3":
+            custom = input("  Enter your custom symbol (1 visible character): ").strip()
+            if not custom:
+                print("  Symbol cannot be empty.")
+                continue
+            if len(custom) > 3:
+                print("  Please enter 1 visible character only.")
+                continue
+            if custom == taken_symbol:
+                print("  That symbol is already taken. Choose another.")
+                continue
+            return custom
+        print("  Enter 0, 1, 2, or 3.")
+
+
+def choose_symbols(names):
+    # Returns {"X": sym, "O": sym} or None to go back
+    while True:
+        sym_x = choose_symbol("X", names["X"])
+        if sym_x is None:
+            return None
+        while True:
+            sym_o = choose_symbol("O", names["O"], taken_symbol=sym_x)
+            if sym_o is None:
+                break  # back → re-ask X's symbol
+            return {"X": sym_x, "O": sym_o}
+
+
+
 def get_player_names():
     while True:
         raw_x = input("Enter name for player X (or 'back'): ").strip()
@@ -120,10 +200,12 @@ def get_player_names():
             print(f"'{name_o}' is already taken by Player X. Choose a different name.")
 
 
-def choose_starter(names):
+def choose_starter(names, symbols):
     # Asks once per session; random uses random.choice to pick X or O
     while True:
-        choice = input(f"Who goes first? X ({names['X']}) / O ({names['O']}) / random / back: ").strip().lower()
+        choice = input(
+            f"Who goes first? X ({names['X']} {symbols['X']}) / O ({names['O']} {symbols['O']}) / random / back: "
+        ).strip().lower()
         if choice == "back":
             return None
         if choice == "x":
@@ -132,15 +214,15 @@ def choose_starter(names):
             return "O"
         if choice in ("random", "r"):
             starter = random.choice(["X", "O"])
-            print(f"{names[starter]} ({starter}) goes first!")
+            print(f"{names[starter]} ({symbols[starter]}) goes first!")
             return starter
         print("Enter 'X', 'O', 'random', or 'back'.")
 
 
-def print_move_history(history, names):
+def print_move_history(history, names, symbols):
     print("Move history:")
     for i, (player, row, col) in enumerate(history, 1):
-        print(f"  {i}. {names[player]} ({player}): row {row}, col {col}")
+        print(f"  {i}. {names[player]} ({symbols[player]}): row {row}, col {col}")
 
 
 def choose_size():
@@ -166,14 +248,16 @@ def choose_size():
         print("  Enter 0 to go back, or 1, 2, or 3.")
 
 
-def print_scoreboard(scores, names, mode):
+def print_scoreboard(scores, names, symbols, mode):
+    x_label = f"{names['X']} ({symbols['X']})"
+    o_label = f"{names['O']} ({symbols['O']})"
     if mode == "nodraw":
-        print(f"Score — {names['X']}: {scores['X']}  |  {names['O']}: {scores['O']}  |  Games: {scores['games']}")
+        print(f"Score — {x_label}: {scores['X']}  |  {o_label}: {scores['O']}  |  Games: {scores['games']}")
     else:
-        print(f"Score — {names['X']}: {scores['X']}  |  {names['O']}: {scores['O']}  |  Draws: {scores['draws']}  |  Games: {scores['games']}")
+        print(f"Score — {x_label}: {scores['X']}  |  {o_label}: {scores['O']}  |  Draws: {scores['draws']}  |  Games: {scores['games']}")
 
 
-def play_game(scores, names, starter, mode, size):
+def play_game(scores, names, symbols, starter, mode, size):
     # Runs one round starting from starter; updates scores and shows board after each move
     board = create_board(size)
     current_player = starter
@@ -185,9 +269,9 @@ def play_game(scores, names, starter, mode, size):
     while True:
         clear_screen()
         print(f"  Playing: {mode_label}")
-        print_board(board)
+        print_board(board, symbols)
 
-        row, col = get_move(board, current_player, names)
+        row, col = get_move(board, current_player, names, symbols)
         board[row][col] = current_player
         moves += 1
         history.append((current_player, row, col))
@@ -202,8 +286,8 @@ def play_game(scores, names, starter, mode, size):
         if check_winner(board, current_player):
             clear_screen()
             print(f"  Playing: {mode_label}")
-            print_board(board)
-            print(GREEN + f"{names[current_player]} ({current_player}) wins in {moves} moves!" + RESET)
+            print_board(board, symbols)
+            print(GREEN + f"{names[current_player]} ({symbols[current_player]}) wins in {moves} moves!" + RESET)
             scores[current_player] += 1
             scores["games"] += 1
             break
@@ -211,7 +295,7 @@ def play_game(scores, names, starter, mode, size):
         if mode == "classic" and is_draw(board):
             clear_screen()
             print(f"  Playing: {mode_label}")
-            print_board(board)
+            print_board(board, symbols)
             print(YELLOW + "The game is a draw!" + RESET)
             scores["draws"] += 1
             scores["games"] += 1
@@ -219,8 +303,8 @@ def play_game(scores, names, starter, mode, size):
 
         current_player = switch_player(current_player)
 
-    print_move_history(history, names)
-    print_scoreboard(scores, names, mode)
+    print_move_history(history, names, symbols)
+    print_scoreboard(scores, names, symbols, mode)
 
 
 def play_again_prompt():
@@ -254,9 +338,9 @@ def show_main_menu():
 
 def show_game_rules():
     print("\n--- Game Rules / Controls ---")
-    print("Players alternate placing X and O on the board.")
+    print("Players alternate placing their symbol on the board.")
     print("First to get three in a row (row, column, or diagonal) wins.")
-    print("If all 9 squares fill with no winner, it is a draw.")
+    print("If all squares fill with no winner, it is a draw (Classic Mode).")
     print()
     print_reference_board()
     input("Press Enter to return to the menu...")
@@ -279,7 +363,7 @@ def main():
 
         # Step-based setup: each 'back' goes to the previous step
         step = "size"
-        size = names = starter = None
+        size = names = symbols = starter = None
         while True:
             if step == "size":
                 size = choose_size()
@@ -288,11 +372,14 @@ def main():
                 step = "names"
             elif step == "names":
                 names = get_player_names()
-                step = "starter" if names is not None else "size"
+                step = "symbols" if names is not None else "size"
+            elif step == "symbols":
+                symbols = choose_symbols(names)
+                step = "starter" if symbols is not None else "names"
             elif step == "starter":
-                starter = choose_starter(names)
+                starter = choose_starter(names, symbols)
                 if starter is None:
-                    step = "names"
+                    step = "symbols"
                 else:
                     step = "play"
                     break
@@ -304,18 +391,18 @@ def main():
         scores = {"X": 0, "O": 0, "draws": 0, "games": 0}
 
         while True:
-            play_game(scores, names, starter, mode, size)
+            play_game(scores, names, symbols, starter, mode, size)
 
             if not play_again_prompt():
                 break
             starter = switch_player(starter)
 
         print("\nFinal Scoreboard:")
-        print_scoreboard(scores, names, mode)
+        print_scoreboard(scores, names, symbols, mode)
         if scores["X"] > scores["O"]:
-            print(GREEN + f"Overall winner: {names['X']} (X)!" + RESET)
+            print(GREEN + f"Overall winner: {names['X']} ({symbols['X']})!" + RESET)
         elif scores["O"] > scores["X"]:
-            print(GREEN + f"Overall winner: {names['O']} (O)!" + RESET)
+            print(GREEN + f"Overall winner: {names['O']} ({symbols['O']})!" + RESET)
         else:
             print(YELLOW + "Overall result: Tied!" + RESET)
 
