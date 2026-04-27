@@ -13,6 +13,18 @@ def print_board(board):
     print()
 
 
+def print_reference_board():
+    # Displays a coordinate guide so players know which (row, col) to enter
+    print("Board positions (row, col):")
+    print()
+    print(" (0,0) | (0,1) | (0,2)")
+    print("-------+-------+-------")
+    print(" (1,0) | (1,1) | (1,2)")
+    print("-------+-------+-------")
+    print(" (2,0) | (2,1) | (2,2)")
+    print()
+
+
 def get_move(board, player):
     # Ask for a valid move until input is correct
     while True:
@@ -23,7 +35,7 @@ def get_move(board, player):
             if row < 0 or row > 2 or col < 0 or col > 2:
                 print("Invalid move. Try again.")
             elif board[row][col] != " ":
-                print("Spot already taken.")
+                print("That spot is already taken. Try again.")
             else:
                 return row, col
 
@@ -68,11 +80,8 @@ def is_draw(board):
     return True
 
 
-def main():
-    print("Welcome to Tic-Tac-Toe!")
-    print("Players take turns entering row and column numbers from 0 to 2.")
-    print("The first player to get three in a row wins.")
-
+def play_game(scores):
+    # Runs a single game and updates the scores dictionary when a player wins
     board = create_board()
     current_player = "X"
 
@@ -85,6 +94,7 @@ def main():
         if check_winner(board, current_player):
             print_board(board)
             print(f"Player {current_player} wins!")
+            scores[current_player] += 1
             break
 
         if is_draw(board):
@@ -93,6 +103,29 @@ def main():
             break
 
         current_player = switch_player(current_player)
+
+    print(f"Score — X: {scores['X']}  |  O: {scores['O']}")
+
+
+def main():
+    print("Welcome to Tic-Tac-Toe!")
+    print("Players take turns entering row and column numbers from 0 to 2.")
+    print("The first player to get three in a row wins.")
+    print()
+    print_reference_board()
+
+    # Dictionary to track wins for each player across multiple rounds
+    scores = {"X": 0, "O": 0}
+
+    while True:
+        play_game(scores)
+
+        again = input("Play again? (y/n): ").strip().lower()
+        if again != "y":
+            break
+
+    print(f"\nFinal scores — X: {scores['X']}  |  O: {scores['O']}")
+    print("Thanks for playing!")
 
 
 if __name__ == "__main__":
