@@ -12,6 +12,7 @@ def print_board(board):
             print("---+---+---")
     print()
 
+
 def get_move(board, player):
     # Ask for a valid move until input is correct
     while True:
@@ -29,11 +30,13 @@ def get_move(board, player):
         except ValueError:
             print("Invalid input. Enter numbers only.")
 
+
 def switch_player(current_player):
     # Switch between X and O
     if current_player == "X":
         return "O"
     return "X"
+
 
 def check_winner(board, player):
     # Check rows
@@ -64,8 +67,11 @@ def is_draw(board):
                 return False
     return True
 
+
 def main():
     print("Welcome to Tic-Tac-Toe!")
+    print("Players take turns entering row and column numbers from 0 to 2.")
+    print("The first player to get three in a row wins.")
 
     board = create_board()
     current_player = "X"
