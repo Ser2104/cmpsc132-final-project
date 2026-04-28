@@ -9,7 +9,7 @@ YELLOW = "\033[93m"
 RESET = "\033[0m"
 
 PRESET_SYMBOLS = ["😂", "❤️", "😭", "🔥", "🤣", "✨", "👍", "😍", "🥰", "😊"]
-SAVE_FILE = "savegame.json"
+SAVE_FILE = "saves.json"
 WIN_LENGTH = {3: 3, 4: 3, 5: 4}
 
 
@@ -73,32 +73,38 @@ def print_reference_board(size):
 
 
 def get_move(board, player, names, symbols):
-    # Ask for a valid move; 'save' or 'exit' are accepted at the row prompt
     while True:
         try:
             size = len(board)
             raw = input(
-                f"{names[player]} ({symbols[player]}), enter row (0-{size - 1}), 'save', or 'exit': "
+                f"  {names[player]} ({symbols[player]})  row (0-{size-1}) / save / undo / exit: "
             ).strip().lower()
             if raw == "save":
                 return "save", -1
             if raw == "exit":
                 return "exit", -1
+            if raw == "undo":
+                return "undo", -1
             row = int(raw)
             if row < 0 or row >= size:
-                print(f"Row must be between 0 and {size - 1}.")
+                print(f"  Row must be 0-{size - 1}.")
                 continue
-            col = int(input(f"{names[player]} ({symbols[player]}), enter column (0-{size - 1}): "))
+            col_raw = input(
+                f"  {names[player]} ({symbols[player]})  col (0-{size-1}) / back to re-enter row: "
+            ).strip().lower()
+            if col_raw == "back":
+                continue
+            col = int(col_raw)
             if col < 0 or col >= size:
-                print(f"Column must be between 0 and {size - 1}.")
+                print(f"  Col must be 0-{size - 1}.")
                 continue
             if board[row][col] != " ":
-                print("That spot is already taken. Try again.")
+                print("  That spot is already taken. Try again.")
             else:
                 return row, col
 
         except ValueError:
-            print("Invalid input. Enter numbers only, 'save', or 'exit'.")
+            print("  Enter a number, 'save', 'undo', or 'exit'.")
 
 
 def switch_player(current_player):
@@ -140,6 +146,19 @@ def is_draw(board):
             if cell == " ":
                 return False
     return True
+
+
+def rebuild_from_history(history, size, mode):
+    board = create_board(size)
+    pieces = {"X": [], "O": []}
+    for player, r, c in history:
+        board[r][c] = player
+        if mode == "nodraw":
+            pieces[player].append((r, c))
+            if len(pieces[player]) > size:
+                old_r, old_c = pieces[player].pop(0)
+                board[old_r][old_c] = " "
+    return board, pieces
 
 
 def choose_symbol(player_key, player_name, taken_symbol=None):
@@ -203,8 +222,53 @@ def choose_symbols(names):
 
 
 
+def _load_saves():
+    if not os.path.exists(SAVE_FILE):
+        return {}
+    try:
+        with open(SAVE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def _write_saves(saves):
+    with open(SAVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(saves, f, ensure_ascii=False, indent=2)
+
+
+def _saves_table(saves):
+    if not saves:
+        print("  (no saves yet)")
+        return
+    print(f"  {'#':<4} {'Name':<16} {'Players':<26} {'Board':<6} Mode")
+    print("  " + "-" * 62)
+    for i, (slot, d) in enumerate(saves.items(), 1):
+        n = d["names"]
+        players = f"{n['X']} ({d['symbols']['X']}) vs {n['O']} ({d['symbols']['O']})"
+        board_lbl = f"{d['size']}x{d['size']}"
+        mode_lbl = "Classic" if d["mode"] == "classic" else "No-Draw"
+        print(f"  {i:<4} {slot:<16} {players:<26} {board_lbl:<6} {mode_lbl}")
+
+
 def save_game(board, current_player, names, symbols, scores, mode, size, history, pieces, starter):
-    data = {
+    saves = _load_saves()
+    print()
+    print("+--------------------------------+")
+    print("|           SAVE GAME            |")
+    print("+--------------------------------+")
+    _saves_table(saves)
+    print()
+    slot = input("  Save name (or 'back'): ").strip()
+    if not slot or slot.lower() == "back":
+        print("  Save cancelled.")
+        return
+    if slot in saves:
+        ow = input(f"  '{slot}' already exists. Overwrite? (y/n): ").strip().lower()
+        if ow not in ("y", "yes"):
+            print("  Save cancelled.")
+            return
+    saves[slot] = {
         "board": board,
         "current_player": current_player,
         "names": names,
@@ -216,24 +280,37 @@ def save_game(board, current_player, names, symbols, scores, mode, size, history
         "pieces": {k: [list(p) for p in v] for k, v in pieces.items()},
         "starter": starter,
     }
-    with open(SAVE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print(GREEN + f"  Game saved to {SAVE_FILE}." + RESET)
+    _write_saves(saves)
+    print(GREEN + f"  Saved as '{slot}'." + RESET)
 
 
 def load_game():
-    if not os.path.exists(SAVE_FILE):
-        print(YELLOW + "  No saved game found." + RESET)
+    saves = _load_saves()
+    if not saves:
+        print(YELLOW + "  No saved games found." + RESET)
         return None
-    try:
-        with open(SAVE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    print()
+    print("+--------------------------------+")
+    print("|           LOAD GAME            |")
+    print("+--------------------------------+")
+    _saves_table(saves)
+    print()
+    slots = list(saves.keys())
+    while True:
+        raw = input("  Slot number or name (or 'back'): ").strip()
+        if raw.lower() == "back" or raw == "0":
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(slots):
+            slot = slots[int(raw) - 1]
+        elif raw in saves:
+            slot = raw
+        else:
+            print(f"  Enter a number 1-{len(slots)} or an exact save name.")
+            continue
+        data = saves[slot]
         data["history"] = [tuple(h) for h in data["history"]]
         data["pieces"] = {k: [tuple(p) for p in v] for k, v in data["pieces"].items()}
         return data
-    except (json.JSONDecodeError, KeyError) as e:
-        print(RED + f"  Failed to load save file: {e}" + RESET)
-        return None
 
 
 def get_player_names():
@@ -332,15 +409,36 @@ def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
         print_board(board, symbols)
 
         result = get_move(board, current_player, names, symbols)
+
         if result[0] == "save":
             save_game(board, current_player, names, symbols, scores, mode, size, history, pieces, starter)
             input("  Press Enter to continue...")
             continue
+
         if result[0] == "exit":
             confirm = input("  You are leaving the game. Type 'confirm' to exit: ").strip().lower()
             if confirm == "confirm":
                 print(YELLOW + "  Exiting game..." + RESET)
                 return False
+            continue
+
+        if result[0] == "undo":
+            if not history:
+                print("  Nothing to undo.")
+                input("  Press Enter to continue...")
+                continue
+            count = min(2, len(history))
+            print()
+            print("  +-------- UNDO STACK --------+")
+            for _ in range(count):
+                p, r, c = history.pop()
+                print(f"  |  pop  {names[p]:<12} ({symbols[p]}) at ({r},{c})")
+            print("  +----------------------------+")
+            board, pieces = rebuild_from_history(history, size, mode)
+            current_player = switch_player(history[-1][0]) if history else starter
+            moves = len(history)
+            print(f"  {count} move(s) undone.")
+            input("  Press Enter to continue...")
             continue
 
         row, col = result
@@ -424,7 +522,7 @@ def show_game_rules():
     print("Win conditions:  3x3 → 3 in a row  |  4x4 → 3 in a row  |  5x5 → 4 in a row")
     print("Classic Mode: if all squares fill with no winner, it is a draw.")
     print("No-Draw Mode: oldest piece is removed once the piece limit is exceeded.")
-    print("During your turn, type 'save' at the row prompt to save the game.")
+    print("Commands at your turn:  'save' → save game  |  'undo' → undo last 2 moves  |  'exit' → return to menu")
     print()
     print("--- Coordinate Reference ---")
     for s in (3, 4, 5):
