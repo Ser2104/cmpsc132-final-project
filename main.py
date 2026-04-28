@@ -1,7 +1,13 @@
+# CMPSC 132 - Final Project
+# Tic-Tac-Toe Game (2-Player, Terminal-Based)
+# Author: Sergio Yacolca
+
+
 import random
 import os
 import json
 
+# ANSI escape codes for terminal colors and text formatting
 RED = "\033[91m"
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -17,14 +23,6 @@ def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def cell_str(c, symbols):
-    if c == "X":
-        return RED + symbols["X"] + RESET
-    if c == "O":
-        return CYAN + symbols["O"] + RESET
-    return " "
-
-
 def create_board(size=3):
     # Creates an NxN board using a list of lists
     return [[" " for _ in range(size)] for _ in range(size)]
@@ -35,6 +33,7 @@ def _is_wide(sym):
     return not (len(sym) == 1 and ord(sym[0]) < 128)
 
 
+# Displays the board with dynamic size and supports colored and emoji symbols
 def print_board(board, symbols):
     size = len(board)
     wide = _is_wide(symbols["X"]) or _is_wide(symbols["O"])
@@ -61,6 +60,7 @@ def print_board(board, symbols):
     print()
 
 
+# Displays a coordinate guide to help players understand row/column positions
 def print_reference_board(size):
     print(f"  Coordinates ({size}x{size}): row top→bottom (0-{size-1}), col left→right (0-{size-1})")
     print()
@@ -72,6 +72,8 @@ def print_reference_board(size):
     print()
 
 
+# Handles one complete turn input for the current player.
+# Validates row and column values, rejects occupied cells, and recognizes special commands such as save, undo, and exit.
 def get_move(board, player, names, symbols):
     while True:
         try:
@@ -107,17 +109,20 @@ def get_move(board, player, names, symbols):
             print("  Enter a number, 'save', 'undo', or 'exit'.")
 
 
+# Alternates the current player after each valid turn
 def switch_player(current_player):
-    # Switch between X and O
     if current_player == "X":
         return "O"
     return "X"
 
 
+# Checks all possible win sequences by sliding a window of size win_length (rows, columns, and diagonals)
+# The win_length parameter enables functionality for all board sizes (3x3, 4x4, and 5x5)
 def check_winner(board, player, win_length):
     size = len(board)
     # Rows
     for r in range(size):
+        # size - win_length + 1 limits the start so the window always fits in the board
         for c in range(size - win_length + 1):
             if all(board[r][c + k] == player for k in range(win_length)):
                 return True
@@ -139,6 +144,7 @@ def check_winner(board, player, win_length):
     return False
 
 
+# Returns True if every cell on the board is filled (no empty spaces left)
 def is_draw(board):
     # A draw happens when every cell is filled
     for row in board:
@@ -148,27 +154,30 @@ def is_draw(board):
     return True
 
 
-def rebuild_from_history(history, size, mode):
+# Reconstructs the board based on the move history.
+# In No-Draw mode, enforces the piece limit by removing the oldest piece.
+def rebuild_from_history(history, size, mode, win_length):
     board = create_board(size)
     pieces = {"X": [], "O": []}
     for player, r, c in history:
         board[r][c] = player
         if mode == "nodraw":
             pieces[player].append((r, c))
-            if len(pieces[player]) > size:
+            if len(pieces[player]) > win_length:
+                # pop(0) removes the oldest piece (first placed)
                 old_r, old_c = pieces[player].pop(0)
                 board[old_r][old_c] = " "
     return board, pieces
 
 
+# Asks one player to pick a symbol. Keep the default or choose from the emoji list
 def choose_symbol(player_key, player_name, taken_symbol=None):
     print(f"\nChoose symbol for {player_name} ({player_key}):")
     print(f"  1. Keep default ({player_key})")
     print(f"  2. Choose from emoji list")
-    print(f"  3. Enter custom symbol")
     print(f"  0. Back")
     while True:
-        choice = input("  Option (0-3): ").strip()
+        choice = input("  Option (0-2): ").strip()
         if choice == "0" or choice.lower() == "back":
             return None
         if choice == "1":
@@ -193,19 +202,7 @@ def choose_symbol(player_key, player_name, taken_symbol=None):
                     return sym
                 print("    Enter a number between 0 and 10.")
             continue
-        if choice == "3":
-            custom = input("  Enter your custom symbol (1 visible character): ").strip()
-            if not custom:
-                print("  Symbol cannot be empty.")
-                continue
-            if len(custom) > 3:
-                print("  Please enter 1 visible character only.")
-                continue
-            if custom == taken_symbol:
-                print("  That symbol is already taken. Choose another.")
-                continue
-            return custom
-        print("  Enter 0, 1, 2, or 3.")
+        print("  Enter 0, 1, or 2.")
 
 
 def choose_symbols(names):
@@ -221,22 +218,25 @@ def choose_symbols(names):
             return {"X": sym_x, "O": sym_o}
 
 
-
+# Loads saved games from JSON file. Returns empty dictionary if file is missing or invalid
 def _load_saves():
     if not os.path.exists(SAVE_FILE):
         return {}
     try:
         with open(SAVE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError, OSError):
+        # file exists but is corrupted or has the wrong structure
         return {}
 
 
+# Writes the full saves dictionary to the JSON file, overwriting the previous content
 def _write_saves(saves):
     with open(SAVE_FILE, "w", encoding="utf-8") as f:
         json.dump(saves, f, ensure_ascii=False, indent=2)
 
 
+# Displays all saved games in a formatted table
 def _saves_table(saves):
     if not saves:
         print("  (no saves yet)")
@@ -251,6 +251,7 @@ def _saves_table(saves):
         print(f"  {i:<4} {slot:<16} {players:<26} {board_lbl:<6} {mode_lbl}")
 
 
+# Saves the current game state into a named slot in the JSON file
 def save_game(board, current_player, names, symbols, scores, mode, size, history, pieces, starter):
     saves = _load_saves()
     print()
@@ -268,6 +269,7 @@ def save_game(board, current_player, names, symbols, scores, mode, size, history
         if ow not in ("y", "yes"):
             print("  Save cancelled.")
             return
+    # JSON cannot store tuples, so history and pieces are converted to lists
     saves[slot] = {
         "board": board,
         "current_player": current_player,
@@ -284,6 +286,7 @@ def save_game(board, current_player, names, symbols, scores, mode, size, history
     print(GREEN + f"  Saved as '{slot}'." + RESET)
 
 
+# Shows all saved games in a table and lets the player choose one to continue from
 def load_game():
     saves = _load_saves()
     if not saves:
@@ -308,11 +311,13 @@ def load_game():
             print(f"  Enter a number 1-{len(slots)} or an exact save name.")
             continue
         data = saves[slot]
+        # JSON loaded lists back. Convert them to tuples so the rest of the code works normally
         data["history"] = [tuple(h) for h in data["history"]]
         data["pieces"] = {k: [tuple(p) for p in v] for k, v in data["pieces"].items()}
         return data
 
 
+# Asks both players to enter their names and makes sure they are not the same
 def get_player_names():
     while True:
         raw_x = input("Enter name for player X (or 'back'): ").strip()
@@ -348,12 +353,14 @@ def choose_starter(names, symbols):
         print("Enter 'X', 'O', 'random', or 'back'.")
 
 
+# Prints the full list of moves made during the game, in order
 def print_move_history(history, names, symbols):
     print("Move history:")
     for i, (player, row, col) in enumerate(history, 1):
         print(f"  {i}. {names[player]} ({symbols[player]}): row {row}, col {col}")
 
 
+# Allows the user to select the board size or go back to the previous menu
 def choose_size():
     print()
     print("+------------------------+")
@@ -377,6 +384,7 @@ def choose_size():
         print("  Enter 0 to go back, or 1, 2, or 3.")
 
 
+# Shows the current score for both players, including draws and total games played
 def print_scoreboard(scores, names, symbols, mode):
     x_label = f"{names['X']} ({symbols['X']})"
     o_label = f"{names['O']} ({symbols['O']})"
@@ -386,6 +394,34 @@ def print_scoreboard(scores, names, symbols, mode):
         print(f"Score — {x_label}: {scores['X']}  |  {o_label}: {scores['O']}  |  Draws: {scores['draws']}  |  Games: {scores['games']}")
 
 
+# Handles the undo command. Confirms with the player, pops moves from history, and returns the new game state
+# Returns (board, pieces, current_player, moves) if confirmed or None if cancelled
+def _do_undo(history, size, mode, win_length, starter, names, symbols):
+    if not history:
+        print("  Nothing to undo.")
+        input("  Press Enter to continue...")
+        return None
+    count = min(2, len(history))
+    confirm = input(f"  Undo last {count} move(s)? Type 'confirm' to proceed: ").strip().lower()
+    if confirm != "confirm":
+        print("  Undo cancelled.")
+        input("  Press Enter to continue...")
+        return None
+    print()
+    print("  +-------- UNDO STACK --------+")
+    for _ in range(count):
+        p, r, c = history.pop()
+        print(f"  |  pop  {names[p]:<12} ({symbols[p]}) at ({r},{c})")
+    print("  +----------------------------+")
+    board, pieces = rebuild_from_history(history, size, mode, win_length)
+    # if history is empty after undo, the starter goes first again
+    current_player = switch_player(history[-1][0]) if history else starter
+    print(f"  {count} move(s) undone.")
+    input("  Press Enter to continue...")
+    return board, pieces, current_player, len(history)
+
+
+# Main game loop. Controls turns, board updates, win/draw detection, and save/undo/exit commands.
 def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
     win_length = WIN_LENGTH[size]
     if resume_state:
@@ -420,25 +456,14 @@ def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
             if confirm == "confirm":
                 print(YELLOW + "  Exiting game..." + RESET)
                 return False
+            print("  Exit cancelled.")
+            input("  Press Enter to continue...")
             continue
 
         if result[0] == "undo":
-            if not history:
-                print("  Nothing to undo.")
-                input("  Press Enter to continue...")
-                continue
-            count = min(2, len(history))
-            print()
-            print("  +-------- UNDO STACK --------+")
-            for _ in range(count):
-                p, r, c = history.pop()
-                print(f"  |  pop  {names[p]:<12} ({symbols[p]}) at ({r},{c})")
-            print("  +----------------------------+")
-            board, pieces = rebuild_from_history(history, size, mode)
-            current_player = switch_player(history[-1][0]) if history else starter
-            moves = len(history)
-            print(f"  {count} move(s) undone.")
-            input("  Press Enter to continue...")
+            undo_result = _do_undo(history, size, mode, win_length, starter, names, symbols)
+            if undo_result:
+                board, pieces, current_player, moves = undo_result
             continue
 
         row, col = result
@@ -446,9 +471,10 @@ def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
         moves += 1
         history.append((current_player, row, col))
 
+        # In No-Draw mode, each player has a limit on active pieces. If the limit is exceeded, that player's oldest piece is removed
         if mode == "nodraw":
             pieces[current_player].append((row, col))
-            if len(pieces[current_player]) > size:
+            if len(pieces[current_player]) > win_length:
                 old_row, old_col = pieces[current_player].pop(0)
                 board[old_row][old_col] = " "
                 print(f"  {names[current_player]}'s oldest piece removed from ({old_row},{old_col}).")
@@ -478,8 +504,9 @@ def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
     return True
 
 
+# Asks the players if they want another round. Returns True for yes, False for no.
 def play_again_prompt():
-    # Returns True only if the player explicitly enters 'y'
+    # Returns True for yes responses and False for no responses
     while True:
         again = input("Play again? (y/n): ").strip().lower()
         if again in ("y", "yes", "ye", "ya", "yep", "yeah", "yeh"):
@@ -489,6 +516,7 @@ def play_again_prompt():
         print("Please enter 'y' or 'n'.")
 
 
+# Clears the screen and shows the main menu with a decorative board and all available options
 def show_main_menu():
     clear_screen()
     X = RED + "X" + RESET
@@ -516,6 +544,7 @@ def show_main_menu():
         print("  Enter 1, 2, 3, 4, or 5.")
 
 
+# Prints the game rules, win conditions, available commands, and coordinate reference for each board size
 def show_game_rules():
     print("\n--- Game Rules / Controls ---")
     print("Players alternate placing their symbol on the board.")
@@ -530,6 +559,7 @@ def show_game_rules():
     input("Press Enter to return to the menu...")
 
 
+# Program entry point. This controls menu navigation and the overall flow.
 def main():
     print("Welcome to Tic-Tac-Toe!")
 
