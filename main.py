@@ -1,5 +1,6 @@
 import random
 import os
+import json
 
 RED = "\033[91m"
 CYAN = "\033[96m"
@@ -8,6 +9,8 @@ YELLOW = "\033[93m"
 RESET = "\033[0m"
 
 PRESET_SYMBOLS = ["😂", "❤️", "😭", "🔥", "🤣", "✨", "👍", "😍", "🥰", "😊"]
+SAVE_FILE = "savegame.json"
+WIN_LENGTH = {3: 3, 4: 3, 5: 4}
 
 
 def clear_screen():
@@ -58,23 +61,30 @@ def print_board(board, symbols):
     print()
 
 
-def print_reference_board():
-    # Displays a coordinate guide so players know which (row, col) to enter
-    print("Coordinates: row = top to bottom (0-2), column = left to right (0-2)")
+def print_reference_board(size):
+    print(f"  Coordinates ({size}x{size}): row top→bottom (0-{size-1}), col left→right (0-{size-1})")
     print()
-    print("          col 0   col 1   col 2")
-    print("row 0     (0,0)   (0,1)   (0,2)")
-    print("row 1     (1,0)   (1,1)   (1,2)")
-    print("row 2     (2,0)   (2,1)   (2,2)")
+    header = "         " + "   ".join(f"col {c}" for c in range(size))
+    print(header)
+    for r in range(size):
+        row_str = f"  row {r}   " + "   ".join(f"({r},{c})" for c in range(size))
+        print(row_str)
     print()
 
 
 def get_move(board, player, names, symbols):
-    # Ask for a valid move until input is correct
+    # Ask for a valid move; 'save' or 'exit' are accepted at the row prompt
     while True:
         try:
             size = len(board)
-            row = int(input(f"{names[player]} ({symbols[player]}), enter row (0-{size - 1}): "))
+            raw = input(
+                f"{names[player]} ({symbols[player]}), enter row (0-{size - 1}), 'save', or 'exit': "
+            ).strip().lower()
+            if raw == "save":
+                return "save", -1
+            if raw == "exit":
+                return "exit", -1
+            row = int(raw)
             if row < 0 or row >= size:
                 print(f"Row must be between 0 and {size - 1}.")
                 continue
@@ -88,7 +98,7 @@ def get_move(board, player, names, symbols):
                 return row, col
 
         except ValueError:
-            print("Invalid input. Enter numbers only.")
+            print("Invalid input. Enter numbers only, 'save', or 'exit'.")
 
 
 def switch_player(current_player):
@@ -98,19 +108,28 @@ def switch_player(current_player):
     return "X"
 
 
-def check_winner(board, player):
-    # Returns True if player fills any full row, column, or diagonal
+def check_winner(board, player, win_length):
     size = len(board)
-    for row in range(size):
-        if all(board[row][col] == player for col in range(size)):
-            return True
-    for col in range(size):
-        if all(board[row][col] == player for row in range(size)):
-            return True
-    if all(board[i][i] == player for i in range(size)):
-        return True
-    if all(board[i][size - 1 - i] == player for i in range(size)):
-        return True
+    # Rows
+    for r in range(size):
+        for c in range(size - win_length + 1):
+            if all(board[r][c + k] == player for k in range(win_length)):
+                return True
+    # Columns
+    for c in range(size):
+        for r in range(size - win_length + 1):
+            if all(board[r + k][c] == player for k in range(win_length)):
+                return True
+    # Diagonal top-left → bottom-right
+    for r in range(size - win_length + 1):
+        for c in range(size - win_length + 1):
+            if all(board[r + k][c + k] == player for k in range(win_length)):
+                return True
+    # Diagonal top-right → bottom-left
+    for r in range(size - win_length + 1):
+        for c in range(win_length - 1, size):
+            if all(board[r + k][c - k] == player for k in range(win_length)):
+                return True
     return False
 
 
@@ -182,6 +201,39 @@ def choose_symbols(names):
                 break  # back → re-ask X's symbol
             return {"X": sym_x, "O": sym_o}
 
+
+
+def save_game(board, current_player, names, symbols, scores, mode, size, history, pieces, starter):
+    data = {
+        "board": board,
+        "current_player": current_player,
+        "names": names,
+        "symbols": symbols,
+        "scores": scores,
+        "mode": mode,
+        "size": size,
+        "history": [list(h) for h in history],
+        "pieces": {k: [list(p) for p in v] for k, v in pieces.items()},
+        "starter": starter,
+    }
+    with open(SAVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(GREEN + f"  Game saved to {SAVE_FILE}." + RESET)
+
+
+def load_game():
+    if not os.path.exists(SAVE_FILE):
+        print(YELLOW + "  No saved game found." + RESET)
+        return None
+    try:
+        with open(SAVE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["history"] = [tuple(h) for h in data["history"]]
+        data["pieces"] = {k: [tuple(p) for p in v] for k, v in data["pieces"].items()}
+        return data
+    except (json.JSONDecodeError, KeyError) as e:
+        print(RED + f"  Failed to load save file: {e}" + RESET)
+        return None
 
 
 def get_player_names():
@@ -257,21 +309,41 @@ def print_scoreboard(scores, names, symbols, mode):
         print(f"Score — {x_label}: {scores['X']}  |  {o_label}: {scores['O']}  |  Draws: {scores['draws']}  |  Games: {scores['games']}")
 
 
-def play_game(scores, names, symbols, starter, mode, size):
-    # Runs one round starting from starter; updates scores and shows board after each move
-    board = create_board(size)
-    current_player = starter
-    moves = 0
-    history = []
-    pieces = {"X": [], "O": []}
+def play_game(scores, names, symbols, starter, mode, size, resume_state=None):
+    win_length = WIN_LENGTH[size]
+    if resume_state:
+        board = resume_state["board"]
+        current_player = resume_state["current_player"]
+        history = list(resume_state["history"])
+        pieces = {k: list(v) for k, v in resume_state["pieces"].items()}
+        moves = len(history)
+    else:
+        board = create_board(size)
+        current_player = starter
+        moves = 0
+        history = []
+        pieces = {"X": [], "O": []}
+
     mode_label = "No-Draw Mode" if mode == "nodraw" else "Classic Mode"
 
     while True:
         clear_screen()
-        print(f"  Playing: {mode_label}")
+        print(f"  {mode_label}  |  {size}x{size}  |  Win: {win_length} in a row")
         print_board(board, symbols)
 
-        row, col = get_move(board, current_player, names, symbols)
+        result = get_move(board, current_player, names, symbols)
+        if result[0] == "save":
+            save_game(board, current_player, names, symbols, scores, mode, size, history, pieces, starter)
+            input("  Press Enter to continue...")
+            continue
+        if result[0] == "exit":
+            confirm = input("  You are leaving the game. Type 'confirm' to exit: ").strip().lower()
+            if confirm == "confirm":
+                print(YELLOW + "  Exiting game..." + RESET)
+                return False
+            continue
+
+        row, col = result
         board[row][col] = current_player
         moves += 1
         history.append((current_player, row, col))
@@ -283,9 +355,9 @@ def play_game(scores, names, symbols, starter, mode, size):
                 board[old_row][old_col] = " "
                 print(f"  {names[current_player]}'s oldest piece removed from ({old_row},{old_col}).")
 
-        if check_winner(board, current_player):
+        if check_winner(board, current_player, win_length):
             clear_screen()
-            print(f"  Playing: {mode_label}")
+            print(f"  {mode_label}  |  {size}x{size}")
             print_board(board, symbols)
             print(GREEN + f"{names[current_player]} ({symbols[current_player]}) wins in {moves} moves!" + RESET)
             scores[current_player] += 1
@@ -294,7 +366,7 @@ def play_game(scores, names, symbols, starter, mode, size):
 
         if mode == "classic" and is_draw(board):
             clear_screen()
-            print(f"  Playing: {mode_label}")
+            print(f"  {mode_label}  |  {size}x{size}")
             print_board(board, symbols)
             print(YELLOW + "The game is a draw!" + RESET)
             scores["draws"] += 1
@@ -305,6 +377,7 @@ def play_game(scores, names, symbols, starter, mode, size):
 
     print_move_history(history, names, symbols)
     print_scoreboard(scores, names, symbols, mode)
+    return True
 
 
 def play_again_prompt():
@@ -320,29 +393,42 @@ def play_again_prompt():
 
 def show_main_menu():
     clear_screen()
+    X = RED + "X" + RESET
+    O = CYAN + "O" + RESET
     print()
     print("+------------------------+")
     print("|     TIC-TAC-TOE        |")
     print("+------------------------+")
+    print(f"|    {X} | . | {X}           |")
+    print("|   ---+---+---          |")
+    print(f"|    . | {O} | .           |")
+    print("|   ---+---+---          |")
+    print(f"|    {O} | . | {X}           |")
+    print("+------------------------+")
     print("|  1. Classic Mode       |")
     print("|  2. No-Draw Mode       |")
-    print("|  3. Game Rules         |")
-    print("|  4. Exit               |")
+    print("|  3. Load Game          |")
+    print("|  4. Game Rules         |")
+    print("|  5. Exit               |")
     print("+------------------------+")
     while True:
-        choice = input("  Option (1-4): ").strip()
-        if choice in ("1", "2", "3", "4"):
+        choice = input("  Option (1-5): ").strip()
+        if choice in ("1", "2", "3", "4", "5"):
             return choice
-        print("  Enter 1, 2, 3, or 4.")
+        print("  Enter 1, 2, 3, 4, or 5.")
 
 
 def show_game_rules():
     print("\n--- Game Rules / Controls ---")
     print("Players alternate placing their symbol on the board.")
-    print("First to get three in a row (row, column, or diagonal) wins.")
-    print("If all squares fill with no winner, it is a draw (Classic Mode).")
+    print("Win conditions:  3x3 → 3 in a row  |  4x4 → 3 in a row  |  5x5 → 4 in a row")
+    print("Classic Mode: if all squares fill with no winner, it is a draw.")
+    print("No-Draw Mode: oldest piece is removed once the piece limit is exceeded.")
+    print("During your turn, type 'save' at the row prompt to save the game.")
     print()
-    print_reference_board()
+    print("--- Coordinate Reference ---")
+    for s in (3, 4, 5):
+        print_reference_board(s)
     input("Press Enter to return to the menu...")
 
 
@@ -353,9 +439,39 @@ def main():
         choice = show_main_menu()
 
         if choice == "3":
+            data = load_game()
+            if data is None:
+                input("  Press Enter to return to the menu...")
+                continue
+            names = data["names"]
+            symbols = data["symbols"]
+            scores = data["scores"]
+            mode = data["mode"]
+            size = data["size"]
+            starter = data["starter"]
+            resume_state = {
+                "board": data["board"],
+                "current_player": data["current_player"],
+                "history": data["history"],
+                "pieces": data["pieces"],
+            }
+            print(GREEN + "  Save loaded!" + RESET)
+            print(f"  {names['X']} ({symbols['X']}) vs {names['O']} ({symbols['O']})")
+            input("  Press Enter to continue...")
+            if not play_game(scores, names, symbols, starter, mode, size, resume_state=resume_state):
+                continue
+            while play_again_prompt():
+                starter = switch_player(starter)
+                if not play_game(scores, names, symbols, starter, mode, size):
+                    break
+            print("\nFinal Scoreboard:")
+            print_scoreboard(scores, names, symbols, mode)
+            continue
+
+        if choice == "4":
             show_game_rules()
             continue
-        if choice == "4":
+        if choice == "5":
             print("Thanks for playing!")
             break
 
@@ -391,8 +507,8 @@ def main():
         scores = {"X": 0, "O": 0, "draws": 0, "games": 0}
 
         while True:
-            play_game(scores, names, symbols, starter, mode, size)
-
+            if not play_game(scores, names, symbols, starter, mode, size):
+                break
             if not play_again_prompt():
                 break
             starter = switch_player(starter)
